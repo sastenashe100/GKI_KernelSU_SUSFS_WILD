@@ -311,6 +311,35 @@ jobs:
         version: ${{ inputs.version }}
         bypass: false
 
+    - name: Apply KPM binary patch (patch_linux)
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "=== Downloading patch_linux ==="
+        KP_VER=$(curl -s "https://api.github.com/repos/SukiSU-Ultra/SukiSU_KernelPatch_patch/releases/latest" | grep '"tag_name"' | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
+        echo "KernelPatch version: ${KP_VER}"
+        wget -q "https://github.com/SukiSU-Ultra/SukiSU_KernelPatch_patch/releases/download/${KP_VER}/patch_linux" -O /tmp/patch_linux
+        chmod +x /tmp/patch_linux
+        echo "=== Finding kernel Image ==="
+        KERNEL_IMAGE=$(find /home/runner/out -name "Image" -type f 2>/dev/null | head -1)
+        if [ -z "$KERNEL_IMAGE" ]; then
+          KERNEL_IMAGE=$(find ${{ github.workspace }} -name "Image" -path "*/dist/*" -not -path "*/KernelSU*" -not -path "*/repo/*" 2>/dev/null | head -1)
+        fi
+        if [ -z "$KERNEL_IMAGE" ]; then
+          echo "ERROR: Could not find kernel Image — listing all:"
+          find ${{ github.workspace }} -name "Image" -type f 2>/dev/null | head -10
+          exit 1
+        fi
+        echo "Found Image at: $KERNEL_IMAGE"
+        echo "=== Applying KPM patch ==="
+        /tmp/patch_linux "$KERNEL_IMAGE" -o "${KERNEL_IMAGE}.kpm" || true
+        if [ -f "${KERNEL_IMAGE}.kpm" ]; then
+          mv "${KERNEL_IMAGE}.kpm" "$KERNEL_IMAGE"
+          echo "=== KPM patch applied successfully ==="
+        else
+          echo "=== KPM patch may have applied in-place ==="
+        fi
+
     - name: Get Cache Stats
       uses: ./.github/actions/cache-stats
       with:
