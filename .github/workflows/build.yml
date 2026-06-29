@@ -321,23 +321,27 @@ jobs:
         wget -q "https://github.com/SukiSU-Ultra/SukiSU_KernelPatch_patch/releases/download/${KP_VER}/patch_linux" -O /tmp/patch_linux
         chmod +x /tmp/patch_linux
         echo "=== Finding kernel Image ==="
-        KERNEL_IMAGE=$(find /home/runner/out -name "Image" -type f 2>/dev/null | head -1)
+        KERNEL_IMAGE=""
+        for p in /home/runner/out/dist/Image /home/runner/out/Image; do
+          [ -f "$p" ] && KERNEL_IMAGE="$p" && break
+        done
         if [ -z "$KERNEL_IMAGE" ]; then
-          KERNEL_IMAGE=$(find ${{ github.workspace }} -name "Image" -path "*/dist/*" -not -path "*/KernelSU*" -not -path "*/repo/*" 2>/dev/null | head -1)
+          KERNEL_IMAGE=$(find /home/runner/out -name "Image" -type f 2>/dev/null | head -1)
         fi
         if [ -z "$KERNEL_IMAGE" ]; then
-          echo "ERROR: Could not find kernel Image — listing all:"
-          find ${{ github.workspace }} -name "Image" -type f 2>/dev/null | head -10
+          echo "ERROR: Could not find kernel Image"
           exit 1
         fi
-        echo "Found Image at: $KERNEL_IMAGE"
-        echo "=== Applying KPM patch ==="
-        /tmp/patch_linux "$KERNEL_IMAGE" -o "${KERNEL_IMAGE}.kpm" || true
+        echo "Found Image at: $KERNEL_IMAGE ($(stat -c%s "$KERNEL_IMAGE") bytes)"
+        echo "=== Applying KPM patch (with -i flag) ==="
+        /tmp/patch_linux -i "$KERNEL_IMAGE" -o "${KERNEL_IMAGE}.kpm"
         if [ -f "${KERNEL_IMAGE}.kpm" ]; then
+          echo "KPM output: $(stat -c%s "${KERNEL_IMAGE}.kpm") bytes (was $(stat -c%s "$KERNEL_IMAGE"))"
           mv "${KERNEL_IMAGE}.kpm" "$KERNEL_IMAGE"
           echo "=== KPM patch applied successfully ==="
         else
-          echo "=== KPM patch may have applied in-place ==="
+          echo "ERROR: patch_linux did not produce output file"
+          exit 1
         fi
 
     - name: Get Cache Stats
