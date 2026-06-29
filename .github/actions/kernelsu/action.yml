@@ -38,4 +38,3 @@ runs:
       with:
         config_list: |
           CONFIG_KSU=y
-          CONFIG_KPM=y
