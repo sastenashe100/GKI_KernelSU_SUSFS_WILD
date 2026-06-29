@@ -1,5 +1,5 @@
 name: 'Setup SukiSU-Ultra'
-description: 'Integrate SukiSU-Ultra (drop-in replacement for Wild KSU)'
+description: 'Integrate SukiSU-Ultra + define hook Kconfig symbols for App Profile'
 inputs:
   ksu_branch:
     description: 'SukiSU branch (empty = main)'
@@ -19,9 +19,21 @@ runs:
         echo "Integrating SukiSU-Ultra ($BRANCH)..."
         curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s "$BRANCH"
 
+    - name: 'Define hook Kconfig symbols (needed for App Profile — SukiSU main omits these)'
+      shell: bash
+      working-directory: ${{ github.workspace }}/kernel
+      run: |
+        KC="common/init/Kconfig"
+        echo "Appending hook Kconfig defs to: $KC"
+        printf '\nconfig KSU_MANUAL_HOOK\n    bool "manual hooks"\n    depends on KSU\n    default y\n' >> "$KC"
+        printf '\nconfig KSU_LSM_HOOKS\n    bool "LSM hooks"\n    depends on KSU\n    default y\n' >> "$KC"
+        echo "=== Defined ===" && grep -E "^config KSU_" "$KC" | tail -5
+
     - name: 'Enable Kernel Configs'
       uses: ./.github/actions/set-kernel-config
       with:
         config_list: |
           CONFIG_KSU=y
           CONFIG_KPM=y
+          CONFIG_KSU_MANUAL_HOOK=y
+          CONFIG_KSU_LSM_HOOKS=y
