@@ -1,8 +1,8 @@
 name: 'Setup SukiSU-Ultra'
-description: 'Integrate SukiSU-Ultra with version tracking (drop-in for Wild KSU)'
+description: 'Integrate SukiSU-Ultra with version tracking + KPM header fix'
 inputs:
   ksu_branch:
-    description: 'SukiSU branch (empty = main)'
+    description: 'SukiSU branch (empty = 149f65faf)'
     required: false
     default: ""
 
@@ -19,7 +19,29 @@ runs:
         echo "Integrating SukiSU-Ultra ($BRANCH)..."
         curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s "$BRANCH"
 
-    - name: 'Set SukiSU version (CRITICAL — without this, App Profile fails due to version mismatch)'
+    - name: 'Fix KPM header path (supercall.h include resolution)'
+      shell: bash
+      working-directory: ${{ github.workspace }}/kernel
+      run: |
+        set -euo pipefail
+        KSU_DIR=$(find . -maxdepth 3 -type d -name "kpm" -path "*kernelsu*" 2>/dev/null | head -1)
+        if [ -z "$KSU_DIR" ]; then
+          KSU_DIR=$(find . -maxdepth 3 -type d -name "kpm" -path "*KernelSU*" 2>/dev/null | head -1)
+        fi
+        if [ -n "$KSU_DIR" ]; then
+          mkdir -p "$KSU_DIR/uapi"
+          SC=$(find . -maxdepth 3 -name "supercall.h" -path "*supercall*" 2>/dev/null | head -1)
+          if [ -n "$SC" ]; then
+            cp "$SC" "$KSU_DIR/uapi/supercall.h"
+            echo "Copied supercall.h to $KSU_DIR/uapi/supercall.h"
+          else
+            echo "WARNING: supercall.h not found — KPM may not compile"
+          fi
+        else
+          echo "WARNING: kpm directory not found"
+        fi
+
+    - name: 'Set SukiSU version (needed for App Profile)'
       shell: bash
       working-directory: ${{ github.workspace }}/kernel
       run: |
@@ -31,10 +53,11 @@ runs:
         sed -i "s/^KSU_VERSION_FALLBACK := 1\$/KSU_VERSION_FALLBACK := ${KSU_VERSION}/" Kbuild
         KSU_GIT_TAG="$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.1")"
         sed -i "s/^KSU_VERSION_TAG_FALLBACK := v0.0.1\$/KSU_VERSION_TAG_FALLBACK := ${KSU_GIT_TAG}/" Kbuild
-        echo "SukiSU version set to: $KSU_VERSION (tag: $KSU_GIT_TAG, commits: $COMMITS_COUNT)"
+        echo "SukiSU version: $KSU_VERSION (tag: $KSU_GIT_TAG, commits: $COMMITS_COUNT)"
 
     - name: 'Enable Kernel Configs'
       uses: ./.github/actions/set-kernel-config
       with:
         config_list: |
           CONFIG_KSU=y
+          CONFIG_KPM=y
