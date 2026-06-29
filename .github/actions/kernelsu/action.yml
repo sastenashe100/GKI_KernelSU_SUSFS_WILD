@@ -15,7 +15,7 @@ runs:
       run: |
         set -euo pipefail
         BRANCH="${{ inputs.ksu_branch }}"
-        [ -z "$BRANCH" ] && BRANCH="main"
+        [ -z "$BRANCH" ] && BRANCH="149f65faf983d0affd7d80d2016cc3bc81574c79"
         echo "Integrating SukiSU-Ultra ($BRANCH)..."
         curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s "$BRANCH"
 
