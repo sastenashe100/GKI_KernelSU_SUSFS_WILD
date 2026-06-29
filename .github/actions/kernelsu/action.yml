@@ -1,5 +1,5 @@
 name: 'Setup SukiSU-Ultra'
-description: 'Integrate SukiSU-Ultra + define hook/SUSFS Kconfig symbols for WildKernels build'
+description: 'Integrate SukiSU-Ultra (drop-in replacement for Wild KSU)'
 inputs:
   ksu_branch:
     description: 'SukiSU branch (empty = main)'
@@ -19,40 +19,9 @@ runs:
         echo "Integrating SukiSU-Ultra ($BRANCH)..."
         curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s "$BRANCH"
 
-    - name: 'Define missing Kconfig symbols (KSU_SUSFS, MANUAL_HOOK, LSM_HOOKS — not in SukiSU main but needed by WildKernels SUSFS/hooks patches)'
-      shell: bash
-      working-directory: ${{ github.workspace }}/kernel
-      run: |
-        KC="common/init/Kconfig"
-        [ ! -f "$KC" ] && KC=$(find common -name Kconfig -path "*init*" 2>/dev/null | head -1)
-        echo "Appending Kconfig defs to: $KC"
-        printf '\nconfig KSU_MANUAL_HOOK\n    bool "manual hooks"\n    depends on KSU\n    default y\n' >> "$KC"
-        printf '\nconfig KSU_LSM_HOOKS\n    bool "LSM hooks"\n    depends on KSU\n    default y\n' >> "$KC"
-        printf '\nconfig KSU_SUSFS\n    bool "SUSFS hiding"\n    depends on KSU\n    default y\n' >> "$KC"
-        printf '\nconfig KSU_SUSFS_SUS_MOUNT\n    bool "mount hiding"\n    depends on KSU_SUSFS\n    default y\n' >> "$KC"
-        printf '\nconfig KSU_SUSFS_SUS_KSTAT\n    bool "kstat hiding"\n    depends on KSU_SUSFS\n    default y\n' >> "$KC"
-        printf '\nconfig KSU_SUSFS_SPOOF_UNAME\n    bool "uname spoof"\n    depends on KSU_SUSFS\n    default y\n' >> "$KC"
-        printf '\nconfig KSU_SUSFS_ENABLE_LOG\n    bool "log"\n    depends on KSU_SUSFS\n    default y\n' >> "$KC"
-        printf '\nconfig KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS\n    bool "hide sym"\n    depends on KSU_SUSFS\n    default y\n' >> "$KC"
-        printf '\nconfig KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG\n    bool "cmdline spoof"\n    depends on KSU_SUSFS\n    default y\n' >> "$KC"
-        printf '\nconfig KSU_SUSFS_OPEN_REDIRECT\n    bool "open redirect"\n    depends on KSU_SUSFS\n    default y\n' >> "$KC"
-        printf '\nconfig KSU_SUSFS_SUS_MAP\n    bool "map hiding"\n    depends on KSU_SUSFS\n    default y\n' >> "$KC"
-        echo "=== All defined symbols ===" && grep -E "^config " "$KC"
-
     - name: 'Enable Kernel Configs'
       uses: ./.github/actions/set-kernel-config
       with:
         config_list: |
           CONFIG_KSU=y
           CONFIG_KPM=y
-          CONFIG_KSU_MANUAL_HOOK=y
-          CONFIG_KSU_LSM_HOOKS=y
-          CONFIG_KSU_SUSFS=y
-          CONFIG_KSU_SUSFS_SUS_MOUNT=y
-          CONFIG_KSU_SUSFS_SUS_KSTAT=y
-          CONFIG_KSU_SUSFS_SPOOF_UNAME=y
-          CONFIG_KSU_SUSFS_ENABLE_LOG=y
-          CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
-          CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
-          CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
-          CONFIG_KSU_SUSFS_SUS_MAP=y
