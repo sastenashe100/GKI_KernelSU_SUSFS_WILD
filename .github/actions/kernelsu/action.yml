@@ -1,5 +1,5 @@
 name: 'Setup SukiSU-Ultra'
-description: 'Integrate SukiSU-Ultra with version tracking + KPM header fix'
+description: 'Integrate SukiSU-Ultra with version tracking'
 inputs:
   ksu_branch:
     description: 'SukiSU branch (empty = 149f65faf)'
@@ -18,28 +18,6 @@ runs:
         [ -z "$BRANCH" ] && BRANCH="149f65faf983d0affd7d80d2016cc3bc81574c79"
         echo "Integrating SukiSU-Ultra ($BRANCH)..."
         curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s "$BRANCH"
-
-    - name: 'Fix KPM header path (supercall.h include resolution)'
-      shell: bash
-      working-directory: ${{ github.workspace }}/kernel
-      run: |
-        set -euo pipefail
-        KSU_DIR=$(find . -maxdepth 3 -type d -name "kpm" -path "*kernelsu*" 2>/dev/null | head -1)
-        if [ -z "$KSU_DIR" ]; then
-          KSU_DIR=$(find . -maxdepth 3 -type d -name "kpm" -path "*KernelSU*" 2>/dev/null | head -1)
-        fi
-        if [ -n "$KSU_DIR" ]; then
-          mkdir -p "$KSU_DIR/uapi"
-          SC=$(find . -maxdepth 3 -name "supercall.h" -path "*supercall*" 2>/dev/null | head -1)
-          if [ -n "$SC" ]; then
-            cp "$SC" "$KSU_DIR/uapi/supercall.h"
-            echo "Copied supercall.h to $KSU_DIR/uapi/supercall.h"
-          else
-            echo "WARNING: supercall.h not found — KPM may not compile"
-          fi
-        else
-          echo "WARNING: kpm directory not found"
-        fi
 
     - name: 'Set SukiSU version (needed for App Profile)'
       shell: bash
@@ -60,4 +38,3 @@ runs:
       with:
         config_list: |
           CONFIG_KSU=y
-          CONFIG_KPM=y
