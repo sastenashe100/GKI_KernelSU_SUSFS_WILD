@@ -1,5 +1,5 @@
 name: 'Setup SukiSU-Ultra'
-description: 'Integrate SukiSU-Ultra with version tracking'
+description: 'Integrate SukiSU-Ultra + KPM include path fix + version tracking'
 inputs:
   ksu_branch:
     description: 'SukiSU branch (empty = 149f65faf)'
@@ -19,22 +19,32 @@ runs:
         echo "Integrating SukiSU-Ultra ($BRANCH)..."
         curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s "$BRANCH"
 
+    - name: 'Fix KPM include paths + enable KPM compilation'
+      shell: bash
+      working-directory: ${{ github.workspace }}/kernel
+      run: |
+        KB=$(find . -maxdepth 3 -name Kbuild -path "*KernelSU*" -not -path "*/repo/*" 2>/dev/null | head -1)
+        [ -z "$KB" ] && KB=$(find . -maxdepth 3 -name Kbuild -path "*kernelsu*" 2>/dev/null | head -1)
+        echo "Adding include paths to: $KB"
+        echo 'ccflags-y += -I$(src)/include -I$(src)/kpm -I$(src)/supercall' >> "$KB"
+        echo "=== Kbuild now has: ==="
+        tail -5 "$KB"
+
     - name: 'Set SukiSU version (needed for App Profile)'
       shell: bash
       working-directory: ${{ github.workspace }}/kernel
       run: |
-        set -euo pipefail
         cd KernelSU/kernel
         COMMITS_COUNT=$(/usr/bin/git rev-list --count HEAD)
-        BASE_VERSION=30000
-        KSU_VERSION=$(expr $COMMITS_COUNT "+" $BASE_VERSION)
+        KSU_VERSION=$(expr $COMMITS_COUNT "+" 30000)
         sed -i "s/^KSU_VERSION_FALLBACK := 1\$/KSU_VERSION_FALLBACK := ${KSU_VERSION}/" Kbuild
         KSU_GIT_TAG="$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.1")"
         sed -i "s/^KSU_VERSION_TAG_FALLBACK := v0.0.1\$/KSU_VERSION_TAG_FALLBACK := ${KSU_GIT_TAG}/" Kbuild
-        echo "SukiSU version: $KSU_VERSION (tag: $KSU_GIT_TAG, commits: $COMMITS_COUNT)"
+        echo "SukiSU version: $KSU_VERSION"
 
     - name: 'Enable Kernel Configs'
       uses: ./.github/actions/set-kernel-config
       with:
         config_list: |
           CONFIG_KSU=y
+          CONFIG_KPM=y
