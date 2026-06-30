@@ -1,8 +1,8 @@
 name: 'Setup SukiSU-Ultra'
-description: 'Integrate SukiSU-Ultra + KPM header fix + version tracking'
+description: 'Integrate SukiSU-Ultra + KPM header fix (konoha-kernel-gci proven method) + version tracking'
 inputs:
   ksu_branch:
-    description: 'SukiSU branch (empty = 149f65faf)'
+    description: 'SukiSU branch (empty = 149f65faf, the manual_su commit where App Profile works)'
     required: false
     default: ""
 
@@ -19,35 +19,66 @@ runs:
         echo "Integrating SukiSU-Ultra ($BRANCH)..."
         curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s "$BRANCH"
 
-    - name: 'Fix KPM headers (konoha-kernel-gki method — proven fix)'
+    - name: 'Fix KPM headers (konoha-kernel-gci PROVEN method — rewrites include paths at source level, no $(src) dependency)'
       shell: bash
       working-directory: ${{ github.workspace }}/kernel
       run: |
+        set -euo pipefail
         REPO="KernelSU"
         MODULES_DIR="."
-        # Create symlink: kernel/uapi -> ../uapi (SukiSU keeps UAPI outside kernel/)
+
+        # SukiSU keeps UAPI headers OUTSIDE kernel/. Expose them under kernel/uapi
+        # so includes like "uapi/supercall.h" can resolve.
         if [ ! -d "$MODULES_DIR/$REPO/kernel/uapi" ] && [ -d "$MODULES_DIR/$REPO/uapi" ]; then
           ln -sfn ../uapi "$MODULES_DIR/$REPO/kernel/uapi"
-          echo "Created symlink: kernel/uapi -> ../uapi"
+          echo "[+] Created symlink: kernel/uapi -> ../uapi"
         fi
-        # Fix kpm.h include path (from konoha-kernel-gki build.sh)
+
         KPM_HEADER="$MODULES_DIR/$REPO/kernel/kpm/kpm.h"
+        KPM_COMPACT="$MODULES_DIR/$REPO/kernel/kpm/compact.c"
+        SUPERCALL_UAPI="$MODULES_DIR/$REPO/uapi/supercall.h"
+        ALLOWLIST_H="$MODULES_DIR/$REPO/kernel/policy/allowlist.h"
+        KSU_KBUILD="$MODULES_DIR/$REPO/kernel/Kbuild"
+
+        # 1) kpm.h: "uapi/supercall.h" -> "../../uapi/supercall.h"
         if [ -f "$KPM_HEADER" ] && grep -q '#include "uapi/supercall.h"' "$KPM_HEADER" 2>/dev/null; then
           sed -i 's|#include "uapi/supercall.h"|#include "../../uapi/supercall.h"|' "$KPM_HEADER"
-          echo "Patched kpm.h: uapi/supercall.h -> ../../uapi/supercall.h"
+          echo "[+] Patched kpm.h: uapi/supercall.h -> ../../uapi/supercall.h"
         fi
-        # Fix ALL nested uapi/ includes in uapi/ directory
-        UAPI_DIR="$MODULES_DIR/$REPO/uapi"
-        if [ -d "$UAPI_DIR" ]; then
-          find "$UAPI_DIR" -name "*.h" -exec sed -i 's|#include "uapi/|#include "|g' {} \;
-          echo "Fixed nested uapi/ includes"
-        fi
-        # Add ALL SukiSU subdirs to include path (fixes compact.c -> policy/allowlist.h etc.)
-        KB="$MODULES_DIR/$REPO/kernel/Kbuild"
-        echo 'subdir-ccflags-y += -I$(src) -I$(src)/kpm -I$(src)/supercall -I$(src)/policy -I$(src)/core -I$(src)/hook -I$(src)/include -I$(src)/feature -I$(src)/selinux -I$(src)/runtime -I$(src)/sulog -I$(src)/infra -I$(src)/other' >> "$KB"
-        echo "Added subdir-ccflags-y (propagates to kpm/)"
 
-    - name: 'Set SukiSU version (needed for App Profile)'
+        # 2) uapi/supercall.h: "uapi/app_profile.h" -> "app_profile.h" (sibling inside uapi/)
+        if [ -f "$SUPERCALL_UAPI" ] && grep -q '#include "uapi/app_profile.h"' "$SUPERCALL_UAPI" 2>/dev/null; then
+          sed -i 's|#include "uapi/app_profile.h"|#include "app_profile.h"|' "$SUPERCALL_UAPI"
+          echo "[+] Patched supercall.h: uapi/app_profile.h -> app_profile.h"
+        fi
+
+        # 3) compact.c: "policy/allowlist.h" -> "../policy/allowlist.h"  <-- THIS was the failing include
+        if [ -f "$KPM_COMPACT" ] && grep -q '#include "policy/allowlist.h"' "$KPM_COMPACT" 2>/dev/null; then
+          sed -i 's|#include "policy/allowlist.h"|#include "../policy/allowlist.h"|' "$KPM_COMPACT"
+          echo "[+] Patched compact.c: policy/allowlist.h -> ../policy/allowlist.h"
+        fi
+
+        # 4) compact.c: "manager/manager_identity.h" -> "../manager/manager_identity.h"
+        if [ -f "$KPM_COMPACT" ] && grep -q '#include "manager/manager_identity.h"' "$KPM_COMPACT" 2>/dev/null; then
+          sed -i 's|#include "manager/manager_identity.h"|#include "../manager/manager_identity.h"|' "$KPM_COMPACT"
+          echo "[+] Patched compact.c: manager/manager_identity.h -> ../manager/manager_identity.h"
+        fi
+
+        # 5) policy/allowlist.h: "uapi/app_profile.h" -> "../uapi/app_profile.h" (via the symlink)
+        if [ -f "$ALLOWLIST_H" ] && grep -q '#include "uapi/app_profile.h"' "$ALLOWLIST_H" 2>/dev/null; then
+          sed -i 's|#include "uapi/app_profile.h"|#include "../uapi/app_profile.h"|' "$ALLOWLIST_H"
+          echo "[+] Patched allowlist.h: uapi/app_profile.h -> ../uapi/app_profile.h"
+        fi
+
+        # 6) Kbuild: add -I$(KSU_KERNEL_DIR)/.. so the repo root (with uapi/) is visible
+        if [ -f "$KSU_KBUILD" ] && ! grep -q '\-I$(KSU_KERNEL_DIR)/\.\.' "$KSU_KBUILD" 2>/dev/null; then
+          sed -i 's|ccflags-y += -I$(KSU_KERNEL_DIR) -I$(KSU_KERNEL_DIR)/include|ccflags-y += -I$(KSU_KERNEL_DIR) -I$(KSU_KERNEL_DIR)/include -I$(KSU_KERNEL_DIR)/..|' "$KSU_KBUILD"
+          echo "[+] Patched Kbuild: added -I\$(KSU_KERNEL_DIR)/.."
+        fi
+
+        echo "[+] All SukiSU KPM header compatibility fixes applied."
+
+    - name: 'Set SukiSU version (needed for App Profile manager IOCTL matching)'
       shell: bash
       working-directory: ${{ github.workspace }}/kernel
       run: |
