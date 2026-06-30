@@ -497,6 +497,17 @@ jobs:
         if-no-files-found: ignore
         compression-level: 9
 
+    - name: Strip executable bit (cosmetic — white icon on macOS)
+      shell: bash
+      run: |
+        # The build marks the kernel Image +x, which makes macOS show a green
+        # "executable" icon. Strip it so the shipped Image shows the neutral
+        # white "document" icon, matching reference kernels. Purely cosmetic —
+        # does NOT affect booting, KPM, root, or flashing.
+        chmod -x "${{ github.workspace }}/AnyKernel3/Image" 2>/dev/null || true
+        chmod -x "${{ github.workspace }}/AnyKernel3/Bypass-Image" 2>/dev/null || true
+        echo "Stripped +x bit from shipped kernel images"
+
     - name: Upload Artifacts
       uses: actions/upload-artifact@v7
       with:
