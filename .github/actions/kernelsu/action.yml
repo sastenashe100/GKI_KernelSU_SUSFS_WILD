@@ -36,13 +36,16 @@ runs:
           sed -i 's|#include "uapi/supercall.h"|#include "../../uapi/supercall.h"|' "$KPM_HEADER"
           echo "Patched kpm.h: uapi/supercall.h -> ../../uapi/supercall.h"
         fi
-        # Fix ALL nested uapi/ includes in uapi/ directory (supercall.h includes uapi/app_profile.h etc.)
+        # Fix ALL nested uapi/ includes in uapi/ directory
         UAPI_DIR="$MODULES_DIR/$REPO/uapi"
         if [ -d "$UAPI_DIR" ]; then
           find "$UAPI_DIR" -name "*.h" -exec sed -i 's|#include "uapi/|#include "|g' {} \;
-          echo "Fixed nested uapi/ includes in $UAPI_DIR"
-          echo "=== uapi/ contents ===" && ls "$UAPI_DIR/"
+          echo "Fixed nested uapi/ includes"
         fi
+        # Add ALL SukiSU subdirs to include path (fixes compact.c -> policy/allowlist.h etc.)
+        KB="$MODULES_DIR/$REPO/kernel/Kbuild"
+        echo 'ccflags-y += -I$(src) -I$(src)/kpm -I$(src)/supercall -I$(src)/policy -I$(src)/core -I$(src)/hook -I$(src)/include -I$(src)/feature -I$(src)/selinux -I$(src)/runtime -I$(src)/sulog -I$(src)/infra -I$(src)/other' >> "$KB"
+        echo "Added all include paths to Kbuild"
 
     - name: 'Set SukiSU version (needed for App Profile)'
       shell: bash
