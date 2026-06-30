@@ -44,8 +44,8 @@ runs:
         fi
         # Add ALL SukiSU subdirs to include path (fixes compact.c -> policy/allowlist.h etc.)
         KB="$MODULES_DIR/$REPO/kernel/Kbuild"
-        echo 'ccflags-y += -I$(src) -I$(src)/kpm -I$(src)/supercall -I$(src)/policy -I$(src)/core -I$(src)/hook -I$(src)/include -I$(src)/feature -I$(src)/selinux -I$(src)/runtime -I$(src)/sulog -I$(src)/infra -I$(src)/other' >> "$KB"
-        echo "Added all include paths to Kbuild"
+        echo 'subdir-ccflags-y += -I$(src) -I$(src)/kpm -I$(src)/supercall -I$(src)/policy -I$(src)/core -I$(src)/hook -I$(src)/include -I$(src)/feature -I$(src)/selinux -I$(src)/runtime -I$(src)/sulog -I$(src)/infra -I$(src)/other' >> "$KB"
+        echo "Added subdir-ccflags-y (propagates to kpm/)"
 
     - name: 'Set SukiSU version (needed for App Profile)'
       shell: bash
@@ -65,4 +65,3 @@ runs:
         config_list: |
           CONFIG_KSU=y
           CONFIG_KPM=y
-          
