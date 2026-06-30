@@ -93,6 +93,13 @@ runs:
     - name: 'Enable Kernel Configs'
       uses: ./.github/actions/set-kernel-config
       with:
+        # CONFIG_KSU_MANUAL_SU=y is REQUIRED for su grants to persist across reboot
+        # (his working kernel has it; our earlier build was missing it -> grants reset).
+        # NOTE: his kernel also has KSU_MANUAL_HOOK + KSU_LSM_HOOKS, but those symbols
+        # are NOT defined in this commit (149f65fa) — only defined in his commit
+        # (d43e2505). If persistence still fails after this, switch the KSU branch to
+        # d43e2505 to enable all three configs and fully replicate his kernel.
         config_list: |
           CONFIG_KSU=y
+          CONFIG_KSU_MANUAL_SU=y
           CONFIG_KPM=y
