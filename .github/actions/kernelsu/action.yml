@@ -23,6 +23,29 @@ runs:
         echo "Integrating SukiSU-Ultra ($BRANCH) — replicating reference kernel..."
         curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s "$BRANCH"
 
+    - name: 'Apply SukiSU MANUAL HOOKS patch (v4.1.2 REQUIRES this — patches the kernel to CALL ksu hooks, else manager says "not installed")'
+      shell: bash
+      working-directory: ${{ github.workspace }}/kernel
+      run: |
+        set -uo pipefail
+        # d43e2505 (v4.1.2) uses MANUAL hooks (not kprobes). The kernel source itself
+        # must be patched to invoke the SukiSU hook functions (exec/open/stat/read/...).
+        # Without this, SukiSU compiles in but the hooks are never called, so the
+        # manager reports "Not installed". This is the same patch MiRinFork and the
+        # reference kernel apply (ShirkNeko/SukiSU_patch/hooks).
+        cd common
+        curl -LSs "https://raw.githubusercontent.com/ShirkNeko/SukiSU_patch/main/hooks/scope_min_manual_hooks_v1.6.patch" -o /tmp/ksu_hooks.patch
+        if patch -p1 -F 3 --forward < /tmp/ksu_hooks.patch > /tmp/ksu_hooks.out 2>&1; then
+          echo "[+] SukiSU manual hooks patch applied cleanly"
+        else
+          echo "[!] SukiSU hooks patch reported issues (rejects are OK if fuzz handled most hunks):"
+          tail -25 /tmp/ksu_hooks.out
+          echo "--- .rej files (these hooks will be MISSING) ---"
+          find . -name "*.rej" 2>/dev/null | head
+        fi
+        echo "--- Kernel files now calling ksu hooks ---"
+        grep -rlE "ksu_handle_" fs/ drivers/ kernel/ 2>/dev/null | head
+
     - name: 'KPM header compatibility fix (no-op on d43e2505 — its kpm uses only system includes, but kept for safety)'
       shell: bash
       working-directory: ${{ github.workspace }}/kernel
