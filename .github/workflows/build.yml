@@ -353,6 +353,29 @@ jobs:
           fi
         fi
 
+        # ============================================================
+        # CRITICAL FIX: "Build Normal Kernel" already copied an UNPATCHED
+        # Image into AnyKernel3/Image (the file that actually ships).
+        # Without this re-copy, the flashed kernel has NO KPM even though
+        # patch_linux succeeded on /home/runner/out/Image.
+        # ============================================================
+        AK3_IMG="${{ github.workspace }}/AnyKernel3/Image"
+        if [ -f "$AK3_IMG" ] && [ -f "$KERNEL_IMAGE" ]; then
+          cp -f "$KERNEL_IMAGE" "$AK3_IMG"
+          echo "=== Copied PATCHED Image -> AnyKernel3/Image ($(stat -c%s "$AK3_IMG") bytes) — this is what ships ==="
+        else
+          echo "WARN: AnyKernel3/Image or patched Image not found at copy step"
+        fi
+
+        # Verify KPM is actually present in the SHIPPED image (MiRinFork method)
+        echo "=== Verify: KPM symbols in shipped AnyKernel3/Image ==="
+        if strings "$AK3_IMG" 2>/dev/null | grep -qiE "\.kpm\.|KernelPatch|kpm_ctl|kpimg"; then
+          echo "OK - KPM PRESENT in shipped Image:"
+          strings "$AK3_IMG" 2>/dev/null | grep -iE "\.kpm\.|KernelPatch|kpm_ctl|kpimg" | head -5
+        else
+          echo "WARN - NO KPM symbols in shipped Image (KPM will not show in manager)"
+        fi
+
     - name: Get Cache Stats
       uses: ./.github/actions/cache-stats
       with:
