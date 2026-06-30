@@ -19,18 +19,15 @@ runs:
         echo "Integrating SukiSU-Ultra ($BRANCH)..."
         curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s "$BRANCH"
 
-    - name: 'Fix KPM headers (inline supercall.h — eliminates missing include chain)'
+    - name: 'Fix KPM headers (put in KERNEL include path — Bazel sandbox safe)'
       shell: bash
       working-directory: ${{ github.workspace }}/kernel
       run: |
-        KSU_ROOT=$(find . -maxdepth 3 -type d -name "kernel" -path "*KernelSU*" 2>/dev/null | head -1)
-        [ -z "$KSU_ROOT" ] && KSU_ROOT=$(find . -maxdepth 3 -type d -name "kernel" -path "*kernelsu*" -not -path "*/repo/*" 2>/dev/null | head -1)
-        echo "SukiSU root: $KSU_ROOT"
-        mkdir -p "$KSU_ROOT/uapi"
-        printf '#ifndef __KSU_UAPI_SUPERCALL_H\n#define __KSU_UAPI_SUPERCALL_H\n#include <linux/types.h>\n#include <linux/uaccess.h>\ntypedef int (*ksu_ioctl_handler_t)(void __user *arg);\ntypedef bool (*ksu_perm_check_t)(void);\nstruct ksu_ioctl_cmd_map { unsigned int cmd; const char *name; ksu_ioctl_handler_t handler; ksu_perm_check_t perm_check; };\nint ksu_install_fd(void);\n#endif\n' > "$KSU_ROOT/uapi/supercall.h"
-        printf '#ifndef __KSU_UAPI_APP_PROFILE_H\n#define __KSU_UAPI_APP_PROFILE_H\n#include <linux/types.h>\n#endif\n' > "$KSU_ROOT/uapi/app_profile.h"
-        echo 'ccflags-y += -I$(src)' >> "$KSU_ROOT/Kbuild"
-        echo "=== uapi/ created ===" && ls "$KSU_ROOT/uapi/"
+        mkdir -p common/include/uapi
+        printf '#ifndef __KSU_UAPI_SUPERCALL_H\n#define __KSU_UAPI_SUPERCALL_H\n#include <linux/types.h>\n#include <linux/uaccess.h>\ntypedef int (*ksu_ioctl_handler_t)(void __user *arg);\ntypedef bool (*ksu_perm_check_t)(void);\nstruct ksu_ioctl_cmd_map { unsigned int cmd; const char *name; ksu_ioctl_handler_t handler; ksu_perm_check_t perm_check; };\nint ksu_install_fd(void);\n#endif\n' > common/include/uapi/supercall.h
+        printf '#ifndef __KSU_UAPI_APP_PROFILE_H\n#define __KSU_UAPI_APP_PROFILE_H\n#include <linux/types.h>\n#endif\n' > common/include/uapi/app_profile.h
+        echo "=== Created in KERNEL include path (Bazel sandbox safe) ==="
+        ls common/include/uapi/
 
     - name: 'Set SukiSU version (needed for App Profile)'
       shell: bash
