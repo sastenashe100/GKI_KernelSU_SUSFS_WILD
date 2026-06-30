@@ -19,15 +19,25 @@ runs:
         echo "Integrating SukiSU-Ultra ($BRANCH)..."
         curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s "$BRANCH"
 
-    - name: 'Fix KPM headers (put in KERNEL include path — Bazel sandbox safe)'
+    - name: 'Fix KPM headers (konoha-kernel-gki method — proven fix)'
       shell: bash
       working-directory: ${{ github.workspace }}/kernel
       run: |
-        mkdir -p common/include/uapi
-        printf '#ifndef __KSU_UAPI_SUPERCALL_H\n#define __KSU_UAPI_SUPERCALL_H\n#include <linux/types.h>\n#include <linux/uaccess.h>\ntypedef int (*ksu_ioctl_handler_t)(void __user *arg);\ntypedef bool (*ksu_perm_check_t)(void);\nstruct ksu_ioctl_cmd_map { unsigned int cmd; const char *name; ksu_ioctl_handler_t handler; ksu_perm_check_t perm_check; };\nint ksu_install_fd(void);\n#endif\n' > common/include/uapi/supercall.h
-        printf '#ifndef __KSU_UAPI_APP_PROFILE_H\n#define __KSU_UAPI_APP_PROFILE_H\n#include <linux/types.h>\n#endif\n' > common/include/uapi/app_profile.h
-        echo "=== Created in KERNEL include path (Bazel sandbox safe) ==="
-        ls common/include/uapi/
+        REPO="KernelSU"
+        MODULES_DIR="."
+        # Create symlink: kernel/uapi -> ../uapi (SukiSU keeps UAPI outside kernel/)
+        if [ ! -d "$MODULES_DIR/$REPO/kernel/uapi" ] && [ -d "$MODULES_DIR/$REPO/uapi" ]; then
+          ln -sfn ../uapi "$MODULES_DIR/$REPO/kernel/uapi"
+          echo "Created symlink: kernel/uapi -> ../uapi"
+        fi
+        # Fix kpm.h include path (from konoha-kernel-gki build.sh)
+        KPM_HEADER="$MODULES_DIR/$REPO/kernel/kpm/kpm.h"
+        if [ -f "$KPM_HEADER" ] && grep -q '#include "uapi/supercall.h"' "$KPM_HEADER" 2>/dev/null; then
+          sed -i 's|#include "uapi/supercall.h"|#include "../../uapi/supercall.h"|' "$KPM_HEADER"
+          echo "Patched kpm.h: uapi/supercall.h -> ../../uapi/supercall.h"
+        else
+          echo "kpm.h not found or already patched"
+        fi
 
     - name: 'Set SukiSU version (needed for App Profile)'
       shell: bash
