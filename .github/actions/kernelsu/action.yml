@@ -70,12 +70,34 @@ runs:
         sed -i "s/^KSU_VERSION_TAG_FALLBACK := v0.0.1\$/KSU_VERSION_TAG_FALLBACK := ${KSU_GIT_TAG}/" Kbuild 2>/dev/null || true
         echo "SukiSU version fallback: $KSU_VERSION"
 
+    - name: 'Disable SUSFS (d43e2505 defaults KSU_SUSFS=y, but KSUN applies no susfs4ksu patch -> linux/susfs.h missing)'
+      shell: bash
+      working-directory: ${{ github.workspace }}/kernel
+      run: |
+        set -euo pipefail
+        # d43e2505's Kconfig sets: config KSU_SUSFS { default y; depends on KSU; }
+        # So enabling CONFIG_KSU=y auto-turns SUSFS ON. But feature_set=KSUN does NOT
+        # apply the simonpunk susfs4ksu patch that provides include/linux/susfs.h, so
+        # the build dies with "fatal error: 'linux/susfs.h' file not found".
+        # SUSFS is for hiding files/mounts/uname — NOT needed for su persistence.
+        # The persistence hooks (manual_su / manual_hook / lsm_hooks) all default y
+        # independently of SUSFS, so disabling SUSFS keeps persistence intact.
+        DEFCONFIG="common/arch/arm64/configs/gki_defconfig"
+        if [ -f "$DEFCONFIG" ]; then
+          sed -i '/^CONFIG_KSU_SUSFS=/d; /^CONFIG_KSU_SUSFS_/d; /^# CONFIG_KSU_SUSFS is not set/d' "$DEFCONFIG"
+          printf '\n# CONFIG_KSU_SUSFS is not set\n' >> "$DEFCONFIG"
+          echo "[+] KSU_SUSFS disabled in $DEFCONFIG (avoids missing linux/susfs.h; persistence hooks stay on)"
+        else
+          echo "WARN: $DEFCONFIG not found — cannot disable SUSFS"
+        fi
+
     - name: 'Enable Kernel Configs — replicate reference kernel (manual_su + hooks = persistence)'
       uses: ./.github/actions/set-kernel-config
       with:
         # These THREE configs are what his working kernel has and ours lacked.
         # They are defined ONLY on commit d43e2505 (his). MANUAL_SU + the hook
-        # mechanisms are what make su grants survive a reboot.
+        # mechanisms are what make su grants survive a reboot. (They also default
+        # to y here, but we set them explicitly for clarity.)
         config_list: |
           CONFIG_KSU=y
           CONFIG_KSU_MANUAL_SU=y
