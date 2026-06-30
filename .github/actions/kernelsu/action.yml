@@ -35,8 +35,13 @@ runs:
         if [ -f "$KPM_HEADER" ] && grep -q '#include "uapi/supercall.h"' "$KPM_HEADER" 2>/dev/null; then
           sed -i 's|#include "uapi/supercall.h"|#include "../../uapi/supercall.h"|' "$KPM_HEADER"
           echo "Patched kpm.h: uapi/supercall.h -> ../../uapi/supercall.h"
-        else
-          echo "kpm.h not found or already patched"
+        fi
+        # Fix ALL nested uapi/ includes in uapi/ directory (supercall.h includes uapi/app_profile.h etc.)
+        UAPI_DIR="$MODULES_DIR/$REPO/uapi"
+        if [ -d "$UAPI_DIR" ]; then
+          find "$UAPI_DIR" -name "*.h" -exec sed -i 's|#include "uapi/|#include "|g' {} \;
+          echo "Fixed nested uapi/ includes in $UAPI_DIR"
+          echo "=== uapi/ contents ===" && ls "$UAPI_DIR/"
         fi
 
     - name: 'Set SukiSU version (needed for App Profile)'
