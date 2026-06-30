@@ -5,6 +5,7 @@ inputs:
     description: 'SukiSU branch (empty = 149f65faf)'
     required: false
     default: ""
+
 runs:
   using: composite
   steps:
@@ -22,65 +23,29 @@ runs:
       shell: bash
       working-directory: ${{ github.workspace }}/kernel
       run: |
-        set -euo pipefail
         REPO="KernelSU"
         MODULES_DIR="."
-
         # Create symlink: kernel/uapi -> ../uapi (SukiSU keeps UAPI outside kernel/)
         if [ ! -d "$MODULES_DIR/$REPO/kernel/uapi" ] && [ -d "$MODULES_DIR/$REPO/uapi" ]; then
           ln -sfn ../uapi "$MODULES_DIR/$REPO/kernel/uapi"
           echo "Created symlink: kernel/uapi -> ../uapi"
         fi
-
         # Fix kpm.h include path (from konoha-kernel-gki build.sh)
         KPM_HEADER="$MODULES_DIR/$REPO/kernel/kpm/kpm.h"
         if [ -f "$KPM_HEADER" ] && grep -q '#include "uapi/supercall.h"' "$KPM_HEADER" 2>/dev/null; then
           sed -i 's|#include "uapi/supercall.h"|#include "../../uapi/supercall.h"|' "$KPM_HEADER"
           echo "Patched kpm.h: uapi/supercall.h -> ../../uapi/supercall.h"
         fi
-
         # Fix ALL nested uapi/ includes in uapi/ directory
         UAPI_DIR="$MODULES_DIR/$REPO/uapi"
         if [ -d "$UAPI_DIR" ]; then
           find "$UAPI_DIR" -name "*.h" -exec sed -i 's|#include "uapi/|#include "|g' {} \;
           echo "Fixed nested uapi/ includes"
         fi
-
-        # Add ALL SukiSU subdirs to include path.
-        # IMPORTANT: use subdir-ccflags-y, not ccflags-y.
-        # kpm/ (and possibly supercall/, policy/, etc.) are recursed into as
-        # their own Kbuild/Makefile targets (confirmed by build log showing
-        # "drivers/kernelsu/kpm" as a distinct make target). Plain ccflags-y
-        # is scoped ONLY to the Kbuild file it's written in and does NOT
-        # propagate into recursively-included subdirectories — only
-        # subdir-ccflags-y does. Using ccflags-y here silently does nothing
-        # for files like kpm/compact.c, causing:
-        #   fatal error: 'policy/allowlist.h' file not found
+        # Add ALL SukiSU subdirs to include path (fixes compact.c -> policy/allowlist.h etc.)
         KB="$MODULES_DIR/$REPO/kernel/Kbuild"
-        echo 'subdir-ccflags-y += -I$(src) -I$(src)/kpm -I$(src)/supercall -I$(src)/policy -I$(src)/core -I$(src)/hook -I$(src)/include -I$(src)/feature -I$(src)/selinux -I$(src)/runtime -I$(src)/sulog -I$(src)/infra -I$(src)/other' >> "$KB"
-        echo "Added all include paths to Kbuild (subdir-ccflags-y)"
-
-        # Belt-and-suspenders fallback: directly patch known-problematic
-        # cross-directory includes inside kpm/*.c in case subdir-ccflags-y
-        # alone doesn't cover every case (e.g. if a file is built from yet
-        # another nested Kbuild level). Safe no-ops if pattern not present.
-        COMPACT_C="$MODULES_DIR/$REPO/kernel/kpm/compact.c"
-        if [ -f "$COMPACT_C" ] && grep -q '#include "policy/allowlist.h"' "$COMPACT_C" 2>/dev/null; then
-          sed -i 's|#include "policy/allowlist.h"|#include "../policy/allowlist.h"|' "$COMPACT_C"
-          echo "Patched compact.c: policy/allowlist.h -> ../policy/allowlist.h"
-        fi
-
-    - name: 'Verify KPM Kbuild propagation (diagnostic)'
-      shell: bash
-      working-directory: ${{ github.workspace }}/kernel
-      run: |
-        set -euo pipefail
-        echo "--- KernelSU/kernel/Kbuild ---"
-        cat KernelSU/kernel/Kbuild
-        echo "--- kpm directory listing ---"
-        find KernelSU/kernel/kpm -maxdepth 1
-        echo "--- does kpm/ have its own Kbuild or Makefile? ---"
-        ls -la KernelSU/kernel/kpm/Kbuild KernelSU/kernel/kpm/Makefile 2>/dev/null || echo "neither found directly in kpm/ (not a separate recursive target)"
+        echo 'ccflags-y += -I$(src) -I$(src)/kpm -I$(src)/supercall -I$(src)/policy -I$(src)/core -I$(src)/hook -I$(src)/include -I$(src)/feature -I$(src)/selinux -I$(src)/runtime -I$(src)/sulog -I$(src)/infra -I$(src)/other' >> "$KB"
+        echo "Added all include paths to Kbuild"
 
     - name: 'Set SukiSU version (needed for App Profile)'
       shell: bash
@@ -100,3 +65,4 @@ runs:
         config_list: |
           CONFIG_KSU=y
           CONFIG_KPM=y
+          
