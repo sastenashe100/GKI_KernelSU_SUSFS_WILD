@@ -23,12 +23,24 @@ runs:
       shell: bash
       working-directory: ${{ github.workspace }}/kernel
       run: |
-        KB=$(find . -maxdepth 3 -name Kbuild -path "*KernelSU*" -not -path "*/repo/*" 2>/dev/null | head -1)
-        [ -z "$KB" ] && KB=$(find . -maxdepth 3 -name Kbuild -path "*kernelsu*" 2>/dev/null | head -1)
-        echo "Adding include paths to: $KB"
-        echo 'ccflags-y += -I$(src)/include -I$(src)/kpm -I$(src)/supercall' >> "$KB"
-        echo "=== Kbuild now has: ==="
-        tail -5 "$KB"
+        KSU_ROOT=$(find . -maxdepth 2 -type d -name "kernel" -path "*KernelSU*" 2>/dev/null | head -1)
+        [ -z "$KSU_ROOT" ] && KSU_ROOT=$(find . -maxdepth 3 -type d -name "kernel" -path "*kernelsu*" -not -path "*/repo/*" 2>/dev/null | head -1)
+        echo "SukiSU source root: $KSU_ROOT"
+        echo "=== Creating uapi/ directory with all needed headers ==="
+        mkdir -p "$KSU_ROOT/uapi"
+        find "$KSU_ROOT" -name "*.h" -path "*/supercall/*" -exec cp {} "$KSU_ROOT/uapi/" \; 2>/dev/null
+        find "$KSU_ROOT" -name "*.h" -path "*/include/uapi/*" -exec cp {} "$KSU_ROOT/uapi/" \; 2>/dev/null
+        find "$KSU_ROOT" -name "app_profile.h" -exec cp {} "$KSU_ROOT/uapi/" \; 2>/dev/null
+        if [ ! -f "$KSU_ROOT/uapi/app_profile.h" ]; then
+          printf '#ifndef __KSU_APP_PROFILE_H\n#define __KSU_APP_PROFILE_H\n#include <linux/types.h>\n#endif\n' > "$KSU_ROOT/uapi/app_profile.h"
+          echo "Created stub app_profile.h"
+        fi
+        echo "=== uapi/ directory contents ==="
+        ls -la "$KSU_ROOT/uapi/"
+        echo "=== Adding -I$(src) to Kbuild ==="
+        KB="$KSU_ROOT/Kbuild"
+        echo 'ccflags-y += -I$(src)' >> "$KB"
+        echo "Done"
 
     - name: 'Set SukiSU version (needed for App Profile)'
       shell: bash
