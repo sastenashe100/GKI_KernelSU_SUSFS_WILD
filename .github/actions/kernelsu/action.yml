@@ -1,52 +1,29 @@
 name: 'Setup SukiSU-Ultra'
-description: 'Replicate the working reference kernel: SukiSU-Ultra @ d43e2505 (v4.1.2) + manual_su + manual_hook + lsm_hooks + KPM'
+description: 'SukiSU-Ultra @ 149f65fa (v4.1.3, kprobes — DETECTED by latest manager) + KPM header fix + version'
 inputs:
   ksu_branch:
-    description: 'SukiSU branch (empty = d43e2505, the EXACT commit of the working reference kernel)'
+    description: 'SukiSU branch (empty = 149f65fa — the kprobe commit that the manager detects)'
     required: false
     default: ""
 
 runs:
   using: composite
   steps:
-    - name: 'Download and setup SukiSU-Ultra (guy commit d43e2505 = v4.1.2)'
+    - name: 'Download and setup SukiSU-Ultra'
       shell: bash
       working-directory: ${{ github.workspace }}/kernel
       run: |
         set -euo pipefail
         BRANCH="${{ inputs.ksu_branch }}"
-        # d43e2505 = the EXACT SukiSU commit the working reference kernel was built from
-        # (string "v4.1.2-d43e2505@builtin"). It defines MANUAL_SU + MANUAL_HOOK + LSM_HOOKS,
-        # which are REQUIRED for su grants to persist across reboot. Newer commits dropped
-        # MANUAL_HOOK/LSM_HOOKS and persistence broke.
-        [ -z "$BRANCH" ] && BRANCH="d43e25056800ace4310e98df828de6eeca57f037"
-        echo "Integrating SukiSU-Ultra ($BRANCH) — replicating reference kernel..."
+        # 149f65fa (v4.1.3) uses KPROBES — no kernel patch stack needed, and the
+        # latest SukiSU manager DETECTS it (root + KPM + App Profile all work).
+        # The d43e2505 (v4.1.2) path needs a full SUSFS+hooks patch stack that
+        # is hard to assemble; 149f65fa is the stable, detected choice.
+        [ -z "$BRANCH" ] && BRANCH="149f65faf983d0affd7d80d2016cc3bc81574c79"
+        echo "Integrating SukiSU-Ultra ($BRANCH)..."
         curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s "$BRANCH"
 
-    - name: 'Apply SukiSU MANUAL HOOKS patch (v4.1.2 REQUIRES this — patches the kernel to CALL ksu hooks, else manager says "not installed")'
-      shell: bash
-      working-directory: ${{ github.workspace }}/kernel
-      run: |
-        set -uo pipefail
-        # d43e2505 (v4.1.2) uses MANUAL hooks (not kprobes). The kernel source itself
-        # must be patched to invoke the SukiSU hook functions (exec/open/stat/read/...).
-        # Without this, SukiSU compiles in but the hooks are never called, so the
-        # manager reports "Not installed". This is the same patch MiRinFork and the
-        # reference kernel apply (ShirkNeko/SukiSU_patch/hooks).
-        cd common
-        curl -LSs "https://raw.githubusercontent.com/ShirkNeko/SukiSU_patch/main/hooks/scope_min_manual_hooks_v1.6.patch" -o /tmp/ksu_hooks.patch
-        if patch -p1 -F 3 --forward < /tmp/ksu_hooks.patch > /tmp/ksu_hooks.out 2>&1; then
-          echo "[+] SukiSU manual hooks patch applied cleanly"
-        else
-          echo "[!] SukiSU hooks patch reported issues (rejects are OK if fuzz handled most hunks):"
-          tail -25 /tmp/ksu_hooks.out
-          echo "--- .rej files (these hooks will be MISSING) ---"
-          find . -name "*.rej" 2>/dev/null | head
-        fi
-        echo "--- Kernel files now calling ksu hooks ---"
-        grep -rlE "ksu_handle_" fs/ drivers/ kernel/ 2>/dev/null | head
-
-    - name: 'KPM header compatibility fix (no-op on d43e2505 — its kpm uses only system includes, but kept for safety)'
+    - name: 'Fix KPM headers (konoha-kernel-gci PROVEN method)'
       shell: bash
       working-directory: ${{ github.workspace }}/kernel
       run: |
@@ -54,7 +31,6 @@ runs:
         REPO="KernelSU"
         MODULES_DIR="."
 
-        # SukiSU keeps UAPI headers OUTSIDE kernel/. Expose them under kernel/uapi.
         if [ ! -d "$MODULES_DIR/$REPO/kernel/uapi" ] && [ -d "$MODULES_DIR/$REPO/uapi" ]; then
           ln -sfn ../uapi "$MODULES_DIR/$REPO/kernel/uapi"
           echo "[+] Created symlink: kernel/uapi -> ../uapi"
@@ -66,7 +42,6 @@ runs:
         ALLOWLIST_H="$MODULES_DIR/$REPO/kernel/policy/allowlist.h"
         KSU_KBUILD="$MODULES_DIR/$REPO/kernel/Kbuild"
 
-        # Each sed only fires if the pattern exists (grep -q guard) -> safe no-op on d43e2505
         [ -f "$KPM_HEADER" ] && grep -q '#include "uapi/supercall.h"' "$KPM_HEADER" 2>/dev/null && \
           sed -i 's|#include "uapi/supercall.h"|#include "../../uapi/supercall.h"|' "$KPM_HEADER" && echo "[+] kpm.h patched"
         [ -f "$SUPERCALL_UAPI" ] && grep -q '#include "uapi/app_profile.h"' "$SUPERCALL_UAPI" 2>/dev/null && \
@@ -93,37 +68,9 @@ runs:
         sed -i "s/^KSU_VERSION_TAG_FALLBACK := v0.0.1\$/KSU_VERSION_TAG_FALLBACK := ${KSU_GIT_TAG}/" Kbuild 2>/dev/null || true
         echo "SukiSU version fallback: $KSU_VERSION"
 
-    - name: 'Disable SUSFS (d43e2505 defaults KSU_SUSFS=y, but KSUN applies no susfs4ksu patch -> linux/susfs.h missing)'
-      shell: bash
-      working-directory: ${{ github.workspace }}/kernel
-      run: |
-        set -euo pipefail
-        # d43e2505's Kconfig sets: config KSU_SUSFS { default y; depends on KSU; }
-        # So enabling CONFIG_KSU=y auto-turns SUSFS ON. But feature_set=KSUN does NOT
-        # apply the simonpunk susfs4ksu patch that provides include/linux/susfs.h, so
-        # the build dies with "fatal error: 'linux/susfs.h' file not found".
-        # SUSFS is for hiding files/mounts/uname — NOT needed for su persistence.
-        # The persistence hooks (manual_su / manual_hook / lsm_hooks) all default y
-        # independently of SUSFS, so disabling SUSFS keeps persistence intact.
-        DEFCONFIG="common/arch/arm64/configs/gki_defconfig"
-        if [ -f "$DEFCONFIG" ]; then
-          sed -i '/^CONFIG_KSU_SUSFS=/d; /^CONFIG_KSU_SUSFS_/d; /^# CONFIG_KSU_SUSFS is not set/d' "$DEFCONFIG"
-          printf '\n# CONFIG_KSU_SUSFS is not set\n' >> "$DEFCONFIG"
-          echo "[+] KSU_SUSFS disabled in $DEFCONFIG (avoids missing linux/susfs.h; persistence hooks stay on)"
-        else
-          echo "WARN: $DEFCONFIG not found — cannot disable SUSFS"
-        fi
-
-    - name: 'Enable Kernel Configs — replicate reference kernel (manual_su + hooks = persistence)'
+    - name: 'Enable Kernel Configs'
       uses: ./.github/actions/set-kernel-config
       with:
-        # These THREE configs are what his working kernel has and ours lacked.
-        # They are defined ONLY on commit d43e2505 (his). MANUAL_SU + the hook
-        # mechanisms are what make su grants survive a reboot. (They also default
-        # to y here, but we set them explicitly for clarity.)
         config_list: |
           CONFIG_KSU=y
-          CONFIG_KSU_MANUAL_SU=y
-          CONFIG_KSU_MANUAL_HOOK=y
-          CONFIG_KSU_LSM_HOOKS=y
           CONFIG_KPM=y
